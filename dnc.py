@@ -1,4 +1,3 @@
-from collections import namedtuple
 
 import torch.nn as nn
 from torch.autograd import Variable
@@ -7,8 +6,8 @@ from .memory import Memory
 
 # Hyper parameters
 BATCH_SIZE = 16
-EPOCHS = 100000
-LEARNING_RATE = 1e-4
+#EPOCHS = 100000
+#LEARNING_RATE = 1e-4
 
 # Controller configurations
 controller_config = {
@@ -36,7 +35,7 @@ class DNC(nn.Module):
         self.controller = Controller(**controller_config)
         self.memory = Memory(self.hidden_size, **memory_config)
         # Initialize state of DNC
-        self.state = self.init_state()
+        self.init_state()
         # Define interface layers
         self.layers = self.init_interface_layers()
         self.layers["output_linear"] = nn.Linear(
@@ -46,12 +45,11 @@ class DNC(nn.Module):
     Initialize the state of the DNC.
     """
     def init_state(self):
-        zero_init = lambda: Variable(torch.zeros(self.controller.num_layers,
+        zero_hidden = lambda: Variable(torch.zeros(self.controller.num_layers,
             BATCH_SIZE, self.controller.hidden_size))
-        controller_state = (zero_init(), zero_init())
-        memory_state = None  # TODO: Call memory's init()?
-        read_vectors = None  # TODO: What is this?
-        return controller_state, memory_state, read_vectors
+        self.controller_state = (zero_hidden(), zero_hidden())
+        self.read_words = Variable(torch.zeros(BATCH_SIZE,
+            self.num_read_heads * self.word_size))  ### TODO *?
 
     """
     Initialize all layers connected to the interface
@@ -116,43 +114,45 @@ class DNC(nn.Module):
         Note: TODO
         `inputs` should have dimension:
             (sequence_size, batch_size, input_size)
-        `read_vectors` should have dimension:
+        `read_words` should have dimension:
             (batch_size, num_read_heads * word_size)
         """
         assert len(inputs.size()) == 3:
 
-        # Unpack prev state
-        controller_state, memory_state, read_vectors = self.state
+        # Get prev state
+        controller_state = self.controller_state
+        read_words  = self.read_words
 
         for i in range(inputs.size()[0]):
             """ We go through the inputs one by one. """
 
             # X_t = x_t ++ [(r^R)_t-1]
-            controller_input = torch.cat([inputs[i], read_vectors], dim=1)
+            controller_input = torch.cat([inputs[i], read_words], dim=1)
             # Add sequence dimension
-            controller_input = controller_input.view(1, -1)
+            controller_input = controller_input.unsqueeze(dim=0)
             # Run one step of controller
             controller_output, controller_state = self.controller(
                 controller_input, controller_state)
             # Remove sequence dimension
             controller_output = controller_output.squeeze(dim=0)
 
-            """ The memory access just takes the interface
-            vector from the controller as an input. """
-            memory_inputs = {name: layer(controller_output)
-                                for name, layer in self.layers.items()}
-            read_vectors, memory_state = self.memory.read(
-                memory_inputs, memory_state)
+            """ Compute all the interface tensors by passing
+            the controller's output to all the layers, and
+            then passing the result as an input to memory. """
+            interface = {name: layer(controller_output)
+                            for name, layer in self.layers.items()}
+            read_words = self.memory.update(interface)
 
             # y_t = v_t + W_r * [(r^R)_t] TODO ??
             output = self.layers["output_linear"](
-                torch.cat([controller_output, read_vectors], dim=1))
+                torch.cat([controller_output, read_words], dim=1))
 
             # TODO: accumulate outputs in a tensor
 
-        # Pack state
-        self.state = (controller_state, memory_state, read_vectors)
-        return output, self.state
+        # Save state
+        self.controller_state = controller_state
+        self.read_words = read_words
+        return output
 
 
 
