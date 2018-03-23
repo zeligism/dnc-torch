@@ -1,55 +1,45 @@
 
+import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.autograd import Variable
 
-from .memory import Memory
-
-# Hyper parameters
-BATCH_SIZE = 16
-#EPOCHS = 100000
-#LEARNING_RATE = 1e-4
-
-# Controller configurations
-controller_config = {
-    "input_size": 8,    # Depends on input? 
-    "hidden_size": 64,
-    "num_layers": 1,
-}
-# Memory configurations
-memory_config = {
-    "memory_size": 16,
-    "word_size": 16,
-    "num_writes": 1,
-    "num_reads": 4,
-}
-
-
-Controller = nn.lstm
+from training_configs import *
+from memory import Memory
 
 class DNC(nn.Module):
 
-    def __init__(self, controller_config, memory_config, output_size):
+    def __init__(self, input_size, output_size,
+        controller_config, memory_config, Controller=nn.LSTM):
         super(DNC, self).__init__()
 
-        # Assign controller and memory
-        self.controller = Controller(**controller_config)
-        self.memory = Memory(self.hidden_size, **memory_config)
+        # Initialize memory
+        self.memory = Memory(**memory_config)
+
+        # First add read vectors' size to controller's input_size
+        input_size += self.memory.num_reads * self.memory.word_size
+        # Now initialize controller
+        self.controller = Controller(input_size, **controller_config)
+
         # Initialize state of DNC
         self.init_state()
+
         # Define interface layers
-        self.layers = self.init_interface_layers()
-        self.layers["output_linear"] = nn.Linear(
-            self.controller.hidden_size, output_size)
+        self.interface_layers = self.init_interface_layers()
+        # Define output layer
+        pre_output_size = self.controller.hidden_size + \
+            self.memory.num_reads * self.memory.word_size
+        self.output_layer = nn.Linear(pre_output_size, output_size)
 
     """
     Initialize the state of the DNC.
     """
     def init_state(self):
-        zero_hidden = lambda: Variable(torch.zeros(self.controller.num_layers,
-            BATCH_SIZE, self.controller.hidden_size))
+        zero_hidden = lambda: Variable(torch.zeros(
+            self.controller.num_layers, BATCH_SIZE, self.controller.hidden_size))
         self.controller_state = (zero_hidden(), zero_hidden())
         self.read_words = Variable(torch.zeros(BATCH_SIZE,
-            self.num_read_heads * self.word_size))  ### TODO *?
+            self.memory.num_reads, self.memory.word_size))
 
     """
     Initialize all layers connected to the interface
@@ -69,7 +59,7 @@ class DNC(nn.Module):
         def linear(activation, *dim):
             dim_prod = dim[0] if len(dim) == 1 else dim[0] * dim[1]
             # Input size to all layers is interface (hidden) size
-            layer = nn.Linear(self.hidden_size, dim_prod)
+            layer = nn.Linear(self.controller.hidden_size, dim_prod)
             layer = reshape_output(layer, *dim)
             if activation is not None:
                 layer = add_activation(layer, activation)
@@ -80,13 +70,21 @@ class DNC(nn.Module):
 
         # Dimensions used
         num_writes = self.memory.num_writes
-        num_writes = self.memory.num_reads
+        num_reads = self.memory.num_reads
         word_size = self.memory.word_size
         num_read_modes = 1 + 2 * num_writes
 
         # Activations used
         sigmoid = nn.Sigmoid()
-        softmax_mode = nn.Softmax(dim=2)
+        #softmax_mode = nn.Softmax(dim=2)  # TODO: update pytorch!
+        # DELETE ME
+        class MySoftmax(nn.Module):
+            def forward(self, input_):
+                batch_size = input_.size()[0]
+                output_ = torch.stack([F.softmax(input_[i]) for i in range(batch_size)], 0)
+                return output_
+        softmax_mode = MySoftmax()
+        # DELETE ME
 
         # Read and write keys and their strengths.
         layers["read_keys"]       = linear(None, num_reads, word_size)
@@ -102,7 +100,7 @@ class DNC(nn.Module):
         layers["write_gate"]      = linear(sigmoid, num_writes)
         # Read modes (forward + backward for each write head,
         # and one for content-based addressing).
-        layers["read_mode"] = linear(softmax_mode, num_reads, num_read_modes)
+        layers["read_modes"] = linear(softmax_mode, num_reads, num_read_modes)
 
         return layers
 
@@ -111,28 +109,27 @@ class DNC(nn.Module):
     """
     def forward(self, inputs):
         """
-        Note: TODO
+        TODO
         `inputs` should have dimension:
             (sequence_size, batch_size, input_size)
         `read_words` should have dimension:
-            (batch_size, num_read_heads * word_size)
+            (batch_size, num_reads * word_size)
         """
-        assert len(inputs.size()) == 3:
+        assert len(inputs.size()) == 3
 
-        # Get prev state
-        controller_state = self.controller_state
-        read_words  = self.read_words
-
+        outputs = []
         for i in range(inputs.size()[0]):
-            """ We go through the inputs one by one. """
+            # We go through the inputs in the sequence one by one.
 
-            # X_t = x_t ++ [(r^R)_t-1]
-            controller_input = torch.cat([inputs[i], read_words], dim=1)
+            # X_t = input ++ read_vectors/read_words
+            controller_input = torch.cat([
+                inputs[i].view(BATCH_SIZE, -1),
+                self.read_words.view(BATCH_SIZE, -1)], dim=1)
             # Add sequence dimension
             controller_input = controller_input.unsqueeze(dim=0)
             # Run one step of controller
-            controller_output, controller_state = self.controller(
-                controller_input, controller_state)
+            controller_output, self.controller_state = self.controller(
+                controller_input, self.controller_state)
             # Remove sequence dimension
             controller_output = controller_output.squeeze(dim=0)
 
@@ -140,19 +137,17 @@ class DNC(nn.Module):
             the controller's output to all the layers, and
             then passing the result as an input to memory. """
             interface = {name: layer(controller_output)
-                            for name, layer in self.layers.items()}
-            read_words = self.memory.update(interface)
+                for name, layer in self.interface_layers.items()}
+            self.read_words = self.memory.update(interface)
 
             # y_t = v_t + W_r * [(r^R)_t] TODO ??
-            output = self.layers["output_linear"](
-                torch.cat([controller_output, read_words], dim=1))
+            output = torch.cat([controller_output,
+                self.read_words.view(BATCH_SIZE, -1)], dim=1)
+            output = self.output_layer(output)
 
-            # TODO: accumulate outputs in a tensor
+            outputs.append(output)
 
-        # Save state
-        self.controller_state = controller_state
-        self.read_words = read_words
-        return output
+        return torch.stack(outputs, dim=0)
 
 
 
