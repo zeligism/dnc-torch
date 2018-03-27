@@ -20,7 +20,7 @@ class Memory:
         self.init_state()
 
     def init_state(self):
-        zero_variable = lambda *dim: Variable(torch.zeros(*dim))
+        zero_variable = lambda *size: Variable(torch.zeros(*size))
         self.memory_data = zero_variable(BATCH_SIZE, self.memory_size, self.memory_size)
         self.read_weights = zero_variable(BATCH_SIZE, self.num_reads, self.memory_size)
         self.write_weights = zero_variable(BATCH_SIZE, self.num_writes, self.memory_size)
@@ -36,26 +36,24 @@ class Memory:
     in memory, for each head. After that, we simply do a weighted softmax on
     the similarity using `strengths` as the weight.
     The arguments have dimensions as follows:
-    `memory_data`: (BATCH_SIZE, num_heads, word_size)
+    `memory_data`: (BATCH_SIZE, memory_size, word_size)
     `keys`:        (BATCH_SIZE, num_heads, word_size)
     `strengths`:   (BATCH_SIZE, num_heads)
     The returned weights have a dimension of (BATCH_SIZE, num_heads, memory_size).
     """
     def content_based_address(self, memory_data, keys, strengths):
-        # First, find the norms on the words (through the `word_size` dimension).
-        keys_norms = keys.norm(p=2, dim=2, keepdim=True)  # TODO: EPSILON?
-        memory_norms = memory_data.norm(p=2, dim=2, keepdim=True)
-
-        # Take the dot products of the keys and words in memory.
-        dot_product = keys @ memory_data.transpose(1, 2)
-        # Take the products of the norms similarly.
-        norms = keys_norms @ memory_norms.transpose(1, 2)
-
-        # Simply divide the norm from the dot product to get the cosine similarity.
-        cosine_similarity = dot_product / (norms + EPSILON)
+        # For each head, find cosine similarity of the word for that head
+        # with each word in memory -> _, num_heads, memory_size, word*word.
+        cosine_similarity = F.cosine_similarity(
+            keys.unsqueeze(dim=2), memory_data.unsqueeze(dim=1), 
+            dim=3, eps=EPSILON)
+        # TODO: update pytorch because of weird squeeze() in cosine similarity.
+        # Then DELETE ME.
+        if len(cosine_similarity.size()) < 3:
+            cosine_similarity = cosine_similarity.unsqueeze(dim=1)
 
         # Transform strengths using the oneplus(x) function.
-        strengths = 1 + F.softplus(strengths).unsqueeze(dim=-1)
+        strengths = 1 + F.softplus(strengths).unsqueeze(dim=2)
 
         # Get the content-based weights using the weighted softmax method
         # TODO: update pytorch because of dim. Then uncomment next line.
