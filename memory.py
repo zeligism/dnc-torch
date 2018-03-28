@@ -21,12 +21,20 @@ class Memory:
 
     def init_state(self):
         zero_variable = lambda *size: Variable(torch.zeros(*size))
-        self.memory_data = zero_variable(BATCH_SIZE, self.memory_size, self.memory_size)
+        self.memory_data = zero_variable(BATCH_SIZE, self.memory_size, self.word_size)
         self.read_weights = zero_variable(BATCH_SIZE, self.num_reads, self.memory_size)
         self.write_weights = zero_variable(BATCH_SIZE, self.num_writes, self.memory_size)
         self.precedence_weights = zero_variable(BATCH_SIZE, self.num_writes, self.memory_size)
         self.link = zero_variable(BATCH_SIZE, self.num_writes, self.memory_size, self.memory_size)
         self.usage = zero_variable(BATCH_SIZE, self.memory_size)
+
+    def detach_state(self):
+        self.memory_data = Variable(self.memory_data.data)
+        self.read_weights = Variable(self.read_weights.data)
+        self.write_weights = Variable(self.write_weights.data)
+        self.precedence_weights = Variable(self.precedence_weights.data)
+        self.link = Variable(self.link.data)
+        self.usage = Variable(self.usage.data)
 
     """
     Content-based addressing.

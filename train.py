@@ -4,52 +4,56 @@ from torch.autograd import Variable
 
 from training_configs import *
 from dnc import DNC
+from repeat_copy import *
 
-def main():
+# Define controller and memory configurations
+controller_config = {
+    "hidden_size": 64,
+    "num_layers": 1,
+}
+memory_config = {
+    "memory_size": 32,
+    "word_size": 8,
+    "num_writes": 1,
+    "num_reads": 4,
+}
 
-	# Set random seed if given
-	torch.manual_seed(RANDOM_SEED or torch.initial_seed())
-	dataset = None
-
-	# Controller configurations
-	controller_config = {
-	    "hidden_size": 64,
-	    "num_layers": 1,
-	}
-	# Memory configurations
-	memory_config = {
-	    "memory_size": 16,
-	    "word_size": 16,
-	    "num_writes": 1,
-	    "num_reads": 4,
-	}
-
-	# Initialize DNC
-	input_size = 8
-	output_size = 8
-	dnc = DNC(input_size, output_size, controller_config, memory_config)
-
+def train(dnc, data_loader):
 	# Initialize optimizer and loss function
 	optimizer = torch.optim.SGD(dnc.parameters(),
 		lr=LEARNING_RATE, momentum=MOMENTUM)
 	loss_func = torch.nn.MSELoss()
 	
 	# Define input and its true output
-	sequence_length = 2
-	inputs = Variable(torch.rand(sequence_length, BATCH_SIZE, input_size))
-	true_outputs = Variable(torch.rand(sequence_length, BATCH_SIZE, output_size))
+	num_examples = 20
+	data = data_loader(num_examples)
+	for inputs, true_outputs in data:
+		#print(inputs, true_outputs)
+		# Zero gradients
+		optimizer.zero_grad()
 
-	# Zero grads and do a forward pass
-	optimizer.zero_grad()
-	pred_outputs = dnc(inputs)
-	print(pred_outputs)
+		# Turn input/output to variable
+		inputs, true_outputs = Variable(inputs), Variable(true_outputs)
 
-	# Compute loss and do a backward pass
-	loss = loss_func(pred_outputs, true_outputs)
-	loss.backward()
+		# Do a forward pass, compute loss, then do a backward pass
+		pred_outputs = dnc(inputs)
+		loss = loss_func(pred_outputs, true_outputs)
+		loss.backward()
 
-	# Update parameters using our optimizer
-	optimizer.step()
+		# Update parameters using the optimizer
+		optimizer.step()
+
+def main():
+	# Set random seed if given
+	torch.manual_seed(RANDOM_SEED or torch.initial_seed())
+
+	# Choose dataset and initialize size of data's input and output
+	data_loader, input_size, output_size = create_repeat_copy()  # default parameters
+
+	# Initialize DNC
+	dnc = DNC(input_size, output_size, controller_config, memory_config)
+
+	train(dnc, data_loader)
 
 if __name__ == '__main__':
 	main()

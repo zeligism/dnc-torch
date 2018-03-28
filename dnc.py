@@ -147,6 +147,11 @@ class DNC(nn.Module):
 
             outputs.append(output)
 
+        # Detaching...?
+        self.controller_state = (Variable(self.controller_state[0].data),
+            Variable(self.controller_state[1].data))
+        self.read_words = Variable(self.read_words.data)
+        self.memory.detach_state()
         return torch.stack(outputs, dim=0)
 
 
