@@ -25,7 +25,7 @@ def train(dnc, data_loader):
 	loss_func = torch.nn.MSELoss()
 	
 	# Define input and its true output
-	num_examples = 20
+	num_examples = 10
 	data = data_loader(num_examples)
 	for inputs, true_outputs in data:
 		#print(inputs, true_outputs)
@@ -37,7 +37,8 @@ def train(dnc, data_loader):
 
 		# Do a forward pass, compute loss, then do a backward pass
 		pred_outputs = dnc(inputs)
-		loss = loss_func(pred_outputs, true_outputs)
+		# Skip first output (prediction from onehot vector)
+		loss = loss_func(pred_outputs[1:], true_outputs)
 		loss.backward()
 
 		# Update parameters using the optimizer

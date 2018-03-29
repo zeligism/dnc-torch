@@ -31,26 +31,34 @@ class DNC(nn.Module):
             self.memory.num_reads * self.memory.word_size
         self.output_layer = nn.Linear(pre_output_size, output_size)
 
-    """
-    Initialize the state of the DNC.
-    """
     def init_state(self):
+        """
+        Initialize the state of the DNC.
+        """
         zero_hidden = lambda: Variable(torch.zeros(
             self.controller.num_layers, BATCH_SIZE, self.controller.hidden_size))
         self.controller_state = (zero_hidden(), zero_hidden())
         self.read_words = Variable(torch.zeros(BATCH_SIZE,
             self.memory.num_reads, self.memory.word_size))
 
-    """
-    Initialize all layers connected to the interface
-    vector (the controller's output).
-    """
-    def init_interface_layers(self):
+    def detach_state(self):
+        """
+        Detach the state of the DNC from the graph.
+        """
+        self.controller_state = (Variable(self.controller_state[0].data),
+            Variable(self.controller_state[1].data))
+        self.read_words = Variable(self.read_words.data)
+        self.memory.detach_state()
 
+    def init_interface_layers(self):
         """
-        The following functions help decorate an affine operation,
-        i.e. a linear layer, with a reshape and an activation.
+        Initialize all layers connected to the interface
+        vector (the controller's output).
         """
+
+        # The following functions help decorate an affine operation,
+        # i.e. a linear layer, with a reshape and an activation.
+
         # `reshape_output` changes `f` to reshape its output to `dim`.
         reshape_output = lambda f, *dim: ( lambda x: f(x).view(-1, *dim) )
         # `add_activation` changes `f` by activating its output with `sigma`.
@@ -104,9 +112,6 @@ class DNC(nn.Module):
 
         return layers
 
-    """
-    Marching forward in the computation graph.
-    """
     def forward(self, inputs):
         """
         TODO
@@ -116,6 +121,8 @@ class DNC(nn.Module):
             (batch_size, num_reads * word_size)
         """
         assert len(inputs.size()) == 3
+
+        self.detach_state()
 
         outputs = []
         for i in range(inputs.size()[0]):
@@ -147,11 +154,6 @@ class DNC(nn.Module):
 
             outputs.append(output)
 
-        # Detaching...?
-        self.controller_state = (Variable(self.controller_state[0].data),
-            Variable(self.controller_state[1].data))
-        self.read_words = Variable(self.read_words.data)
-        self.memory.detach_state()
         return torch.stack(outputs, dim=0)
 
 
