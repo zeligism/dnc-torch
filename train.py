@@ -1,10 +1,13 @@
 
+import time
+
 import torch
+import torch.nn.functional as F
 from torch.autograd import Variable
 
 from training_configs import *
 from dnc import DNC
-from repeat_copy import *
+from repeat_copy import RepeatCopy
 
 # Define controller and memory configurations
 controller_config = {
@@ -18,17 +21,20 @@ memory_config = {
     "num_reads": 4,
 }
 
-def train(dnc, data_loader):
+def train(dnc, dataset):
 	# Initialize optimizer and loss function
 	optimizer = torch.optim.SGD(dnc.parameters(),
 		lr=LEARNING_RATE, momentum=MOMENTUM)
 	loss_func = torch.nn.MSELoss()
 	
+	last_loss = 0
+
 	# Define input and its true output
-	num_examples = 10
-	data = data_loader(num_examples)
-	for inputs, true_outputs in data:
-		#print(inputs, true_outputs)
+	start_time = time.time()
+	for i, data in enumerate(dataset(NUM_EXAMPLES)):
+		# Unpack data
+		inputs, true_outputs = data
+
 		# Zero gradients
 		optimizer.zero_grad()
 
@@ -44,17 +50,25 @@ def train(dnc, data_loader):
 		# Update parameters using the optimizer
 		optimizer.step()
 
+		# Print report when we reach a checkpoint
+		if (i + 1) % CHECKPOINT == 0:
+			pred_bits = pred_outputs.data.clamp(0,1).round()
+			dataset.report(inputs.data, true_outputs.data, pred_bits)
+			print('[%d/%d] Loss = %.3f' % (i+1, NUM_EXAMPLES, loss.data.mean()))
+			print("Time elapsed = %ds" % (time.time() - start_time))
+
 def main():
 	# Set random seed if given
 	torch.manual_seed(RANDOM_SEED or torch.initial_seed())
 
 	# Choose dataset and initialize size of data's input and output
-	data_loader, input_size, output_size = create_repeat_copy()  # default parameters
+	dataset = RepeatCopy()  # default parameters
 
 	# Initialize DNC
-	dnc = DNC(input_size, output_size, controller_config, memory_config)
+	dnc = DNC(dataset.input_size, dataset.output_size,
+		controller_config, memory_config)
 
-	train(dnc, data_loader)
+	train(dnc, dataset)
 
 if __name__ == '__main__':
 	main()
