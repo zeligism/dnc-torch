@@ -55,22 +55,13 @@ class Memory:
         cosine_similarity = F.cosine_similarity(
             keys.unsqueeze(dim=2), memory_data.unsqueeze(dim=1), 
             dim=3, eps=EPSILON)
-        # TODO: update pytorch because of weird squeeze() in cosine similarity.
-        # Then DELETE ME.
-        if len(cosine_similarity.size()) < 3:
-            cosine_similarity = cosine_similarity.unsqueeze(dim=1)
 
         # Transform strengths using the oneplus(x) function.
         strengths = 1 + F.softplus(strengths).unsqueeze(dim=2)
 
         # Get the content-based weights using the weighted softmax method
-        # TODO: update pytorch because of dim. Then uncomment next line.
-        #content_weights = F.softmax(cosine_similarity * strengths, dim=2)
-        # DELETE ME after you update pytorch
-        weighted_cosines = cosine_similarity * strengths
-        weights_list = [F.softmax(weighted_cosines[i]) for i in range(BATCH_SIZE)]
-        content_weights = torch.stack(weights_list)
-        # End DELETE ME
+        content_weights = F.softmax(cosine_similarity * strengths, dim=2)
+        
         return content_weights
 
     def update(self, interface):

@@ -84,15 +84,7 @@ class DNC(nn.Module):
 
         # Activations used
         sigmoid = nn.Sigmoid()
-        #softmax_mode = nn.Softmax(dim=2)  # TODO: update pytorch!
-        # DELETE ME
-        class MySoftmax(nn.Module):
-            def forward(self, input_):
-                batch_size = input_.size()[0]
-                output_ = torch.stack([F.softmax(input_[i]) for i in range(batch_size)], 0)
-                return output_
-        softmax_mode = MySoftmax()
-        # DELETE ME
+        softmax_mode = nn.Softmax(dim=2)
 
         # Read and write keys and their strengths.
         layers["read_keys"]       = linear(None, num_reads, word_size)
@@ -147,7 +139,6 @@ class DNC(nn.Module):
                 for name, layer in self.interface_layers.items()}
             self.read_words = self.memory.update(interface)
 
-            # y_t = v_t + W_r * [(r^R)_t] TODO ??
             output = torch.cat([controller_output,
                 self.read_words.view(BATCH_SIZE, -1)], dim=1)
             output = self.output_layer(output)
