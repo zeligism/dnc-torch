@@ -11,113 +11,128 @@ This is my own version of repeat copy.
 class RepeatCopy:
 
 	def __init__(self, num_bits=4,
-		min_seq_length=4, max_seq_length=6,
-		min_repeats=0, max_repeats=3):
+		min_length=1, max_length=3,
+		min_repeats=1, max_repeats=3):
 		# Check for obvious errors and save configs
 		assert num_bits > 0
-		assert 0 < min_seq_length and min_seq_length <= max_seq_length
+		assert 1 <= min_length and min_length <= max_length
 		assert 0 <= min_repeats and min_repeats <= max_repeats
+
 		self.num_bits = num_bits
-		self.min_seq_length = min_seq_length
-		self.max_seq_length = max_seq_length
+		self.min_length = min_length
+		self.max_length = max_length
 		self.min_repeats = min_repeats
 		self.max_repeats = max_repeats
 		
 		# Input and output sizes are fixed for the given parameters
-		self.onehot_length = self.max_repeats - self.min_repeats + 1
-		self.input_size = max_repeats - min_repeats + 1 + num_bits
-		self.output_size = max_repeats * num_bits
+		self.input_size = num_bits + 2 + max_repeats
+		self.output_size = num_bits + 1
 
-	def __call__(self, num_examples):
+		self.bits_lengths = None
+
+
+	def generate(self, num_examples):
 		"""
-		By calling the object, we create a generator, so in order to get the
-		next example, we should either do that in a loop or by calling `next()`.
-		For example,
-			>>> dataset = RepeatCopy()
-			>>> data_generator = dataset(5)
-			>>> inputs, outputs = next(data_generator)
-			>>> i = 0
-			>>> for inputs, outputs in data_generator:
-			>>>		i += 1
-			>>> print(i)
-			4
+		Generate `num_examples` examples.
 		"""
 		for _ in range(num_examples):
 			yield self.example()
 
+
 	def example(self):
 		"""
 		Fetches/creates the next repeat-copy example.
+		Also returns the lengths of the bits in each batch element.
 		"""
 
-		# Get the sequence length of examples before repeat copy query
-		seq_length = torch.IntTensor(1).random_(
-			self.min_seq_length, self.max_seq_length + 1)[0]
+		# Index for the start marker
+		start_channel = self.num_bits
 
-		# Create random one hot vectors of the number of repeats
-		repeats = torch.LongTensor(BATCH_SIZE, 1)
-		repeats = repeats.random_(self.min_repeats, self.max_repeats + 1)
-		# Scatter 1s along dimension 1 on indices specified by `repeats_idx`
-		repeats_onehot = torch.zeros(BATCH_SIZE, self.onehot_length)
-		repeats_idx = repeats - self.min_repeats
-		repeats_onehot = repeats_onehot.scatter_(
-			dim=1, index=repeats_idx, value=1)
+		# Get the length of observations and repeats
+		bits_lengths = torch.IntTensor(BATCH_SIZE).random_(
+			self.min_length, self.max_length + 1)
+		repeats = torch.IntTensor(BATCH_SIZE).random_(
+			self.min_repeats, self.max_repeats + 1)
 
-		# Create random bits of length `num_bits` each
-		bits = torch.bernoulli(0.5 * torch.ones(seq_length, BATCH_SIZE, self.num_bits))
-
-		# Input sequence include one-hot vector as well
-		inputs = torch.zeros(seq_length + 1, BATCH_SIZE, self.input_size)
-		inputs[0 , ...,  -self.onehot_length:] = repeats_onehot
-		inputs[1:, ..., :-self.onehot_length ] = bits
-
-		# Expected output is `bits` repeated `repeats` times
+		# Total sequence length is input bits + repeats + channels
+		seq_length = torch.max(bits_lengths + repeats * bits_lengths + 3)
+		# Fill inputs and outputs with zeros
+		inputs = torch.zeros(seq_length, BATCH_SIZE, self.input_size)
 		outputs = torch.zeros(seq_length, BATCH_SIZE, self.output_size)
+
 		for i in range(BATCH_SIZE):
-		    num_repeats = repeats[i][0]
-		    # If repeats is 0, then keep outputs as it is
-		    if num_repeats == 0:
-		    	continue
-		    # Fill output up to repeats of bits
-		    filled_length = num_repeats * self.num_bits
-		    outputs[:, i, :filled_length] = bits[:, i, :].repeat(1, num_repeats)
+			# Handy sequence indices to improve readability
+			obs_end = bits_lengths[i] + 1
+			target_start = bits_lengths[i] + 2
+			target_end = target_start + repeats[i] * bits_lengths[i]
+
+			# Create `num_bits` random binary bits of length `obs_length`
+			bits = torch.bernoulli(0.5 * torch.ones(bits_lengths[i], self.num_bits))
+
+			# Inputs starts with a marker at `start_channel`
+			inputs[0, i, start_channel] = 1
+			# Then the observation bits follow (from idx 0 up to start channel)
+			inputs[1:obs_end, i, :start_channel] = bits
+			# Finally, we activate the appropriate repeat channel
+			repeats_active_channel = start_channel + 1 + repeats[i]
+			inputs[obs_end, i, repeats_active_channel] = 1
+
+			# Fill output up to repeats of bits
+			outputs[target_start:target_end, i, 1:] = bits.repeat(repeats[i], 1)
+			outputs[target_end, i, 0] = 1
+
+		self.bits_lengths = bits_lengths
 
 		return inputs, outputs
 
-	def report(self, inputs, true_outputs, pred_outputs):
-		# Get the data from any batch (pick the first w.l.o.g.)
-		example_input = inputs[1:, 0, :-self.onehot_length]
-		expected = true_outputs[:, 0, :]
-		got = pred_outputs[:, 0, :]
-		# Get the number of repeats
-		onehot = inputs[0, 0, -self.onehot_length:]
-		repeat = self.min_repeats + onehot.nonzero()[0][0]
+	def loss(self, pred_outputs, true_outputs):
+		"""
+		TODO
+		"""
+		bits_lengths = self.bits_lengths
 
+		# Clean predictions made during input
+		for i in range(BATCH_SIZE):
+			pred_outputs[:bits_lengths[i]+2, i, :] = 0
+
+		# Calculate the accumulated MSE Loss for all time steps
+		loss = 0
+		for t in range(true_outputs.size()[0]):
+			loss += F.mse_loss(pred_outputs[t, ...], true_outputs[t, ...])
+
+		return loss
+
+
+	def report(self, data, pred_outputs):
+		"""
+		TODO
+		"""
+		inputs, true_outputs = data
+		bits_lengths = self.bits_lengths
+
+		# Pick a random batch number
+		i = torch.IntTensor(1).random_(1, BATCH_SIZE).item()
+
+		# Show the true outputs and the (rounded) predictions
 		print()
 		print("-----------------------------------")
-		print("Print each row %d out of %d times:" % (repeat, self.max_repeats))
-		print(self.readable(example_input))
+		print(inputs[:bits_lengths[i]+2, i, :])
 		print()
 		print("Expected:")
-		print(self.readable(expected))
+		print(true_outputs[bits_lengths[i]+2:, i, :])
 		print()
 		print("Got:")
-		print(self.readable(got))
+		print(pred_outputs[bits_lengths[i]+2:, i, :].round().abs())
+		print()
+		print("Got (without rounding):")
+		print(pred_outputs[bits_lengths[i]+2:, i, :])
 		print()
 
-	def readable(self, tensor):
-		col_strings = []
-		rows, cols = tensor.size()
-		for i in range(rows):
-			row_strings = []
-			for j_next in range(0, cols, self.num_bits):
-				# Take bits one at a time, join them with no seperation
-				row_strings.append("".join(map(lambda x: str(int(x)),
-					tensor[i, j_next : j_next + self.num_bits])))
-			# Seperate bits with a vertical line for readability
-			col_strings.append(" | ".join(row_strings))
-		# Add a new line between rows and return
-		return "\n".join(col_strings)
+		# Print the number of mispredicted bits
+		bits_miss = (pred_outputs.round() - true_outputs).abs().sum().item()
+		bits_total = self.output_size * (bits_lengths + 2).sum().item()
+		print("Bits mispredicted =", int(bits_miss),
+			"out of", int(bits_total))
 
 
 

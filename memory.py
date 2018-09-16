@@ -18,6 +18,7 @@ class Memory:
         # Initialize state of memory
         self.init_state()
 
+
     def init_state(self):
         zero_variable = lambda *size: Variable(torch.zeros(*size))
         self.memory_data = zero_variable(BATCH_SIZE, self.memory_size, self.word_size)
@@ -27,6 +28,7 @@ class Memory:
         self.link = zero_variable(BATCH_SIZE, self.num_writes, self.memory_size, self.memory_size)
         self.usage = zero_variable(BATCH_SIZE, self.memory_size)
 
+
     def detach_state(self):
         self.memory_data = Variable(self.memory_data.data)
         self.read_weights = Variable(self.read_weights.data)
@@ -34,6 +36,16 @@ class Memory:
         self.precedence_weights = Variable(self.precedence_weights.data)
         self.link = Variable(self.link.data)
         self.usage = Variable(self.usage.data)
+
+
+    def debug(self):
+        """
+        Debug memory.
+        """
+        print("-----------------------------------")
+        print(self.memory_data[0, ...])
+        print()
+
 
     def content_based_address(self, memory_data, keys, strengths):
         """
@@ -61,8 +73,9 @@ class Memory:
 
         # Get the content-based weights using the weighted softmax method
         content_weights = F.softmax(cosine_similarity * strengths, dim=2)
-        
+
         return content_weights
+
 
     def update(self, interface):
         """
@@ -147,6 +160,7 @@ class Memory:
         # Return the new read words for each read head from new memory data
         return read_weights_t @ memory_data_t
 
+
     def update_usage(self, free_gate):
         """
         Calculates and returns the next/current `usage`.
@@ -179,6 +193,7 @@ class Memory:
 
         return usage
 
+
     def update_write_weights(self,
         usage, write_gate, allocation_gate, write_content_weights):
         """
@@ -203,6 +218,7 @@ class Memory:
                             (1 - allocation_gate) * write_content_weights)
 
         return write_weights
+
 
     def write_allocation_weights(self, write_alloc_gates, usage):
         """
@@ -233,6 +249,7 @@ class Memory:
         # Stack allocation weights into one tensor and return
         return torch.stack(write_allocation_weights, dim=1)
 
+
     def allocation(self, usage):
         """
         Sort of a subroutine that runs in `update_write_weights(...)`.
@@ -258,6 +275,7 @@ class Memory:
         allocation_weights = sorted_allocation.gather(dim=1, index=phi)
 
         return allocation_weights
+
 
     def update_memory_data(self, weights, erases, writes):
         """
@@ -316,6 +334,7 @@ class Memory:
 
         return link, precedence_weights
 
+
     def update_read_weights(self, link, read_modes, content_weights):
         """
         Update read weights.
@@ -347,6 +366,7 @@ class Memory:
         content_read = content_mode * content_weights
 
         return backward_read + forward_read + content_read
+
 
     def directional_read_weights(self, link, forward):
         """

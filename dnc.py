@@ -17,9 +17,10 @@ class DNC(nn.Module):
         self.memory = Memory(**memory_config)
 
         # First add read vectors' size to controller's input_size
-        input_size += self.memory.num_reads * self.memory.word_size
+        self.input_size = input_size + \
+            self.memory.num_reads * self.memory.word_size
         # Now initialize controller
-        self.controller = Controller(input_size, **controller_config)
+        self.controller = Controller(self.input_size, **controller_config)
 
         # Initialize state of DNC
         self.init_state()
@@ -27,9 +28,9 @@ class DNC(nn.Module):
         # Define interface layers
         self.interface_layers = self.init_interface_layers()
         # Define output layer
-        pre_output_size = self.controller.hidden_size + \
-            self.memory.num_reads * self.memory.word_size
-        self.output_layer = nn.Linear(pre_output_size, output_size)
+        self.output_size = output_size
+        self.output_layer = self.init_output_layer()
+
 
     def init_state(self):
         """
@@ -41,6 +42,7 @@ class DNC(nn.Module):
         self.read_words = Variable(torch.zeros(BATCH_SIZE,
             self.memory.num_reads, self.memory.word_size))
 
+
     def detach_state(self):
         """
         Detach the state of the DNC from the graph.
@@ -49,6 +51,14 @@ class DNC(nn.Module):
             Variable(self.controller_state[1].data))
         self.read_words = Variable(self.read_words.data)
         self.memory.detach_state()
+
+
+    def debug(self):
+        """
+        Prints helpful information about the DNC for debugging.
+        """
+        self.memory.debug()
+
 
     def init_interface_layers(self):
         """
@@ -104,6 +114,20 @@ class DNC(nn.Module):
 
         return layers
 
+
+    def init_output_layer(self):
+        """
+        Initialize output layer that links the interface's outputs
+        to the actual output of the DNC.
+        """
+        pre_output_size = self.controller.hidden_size + \
+            self.memory.num_reads * self.memory.word_size
+
+        output_linear = nn.Linear(pre_output_size, self.output_size)
+
+        return output_linear
+
+
     def forward(self, inputs):
         """
         TODO
@@ -112,7 +136,6 @@ class DNC(nn.Module):
         `read_words` should have dimension:
             (batch_size, num_reads * word_size)
         """
-        assert len(inputs.size()) == 3
 
         self.detach_state()
 
@@ -139,9 +162,9 @@ class DNC(nn.Module):
                 for name, layer in self.interface_layers.items()}
             self.read_words = self.memory.update(interface)
 
-            output = torch.cat([controller_output,
+            pre_output = torch.cat([controller_output,
                 self.read_words.view(BATCH_SIZE, -1)], dim=1)
-            output = self.output_layer(output)
+            output = self.output_layer(pre_output)
 
             outputs.append(output)
 
