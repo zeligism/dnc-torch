@@ -130,7 +130,7 @@ class DNC(nn.Module):
 
     def forward(self, inputs):
         """
-        TODO
+        Makes one forward pass one the inputs.
         `inputs` should have dimension:
             (sequence_size, batch_size, input_size)
         `read_words` should have dimension:

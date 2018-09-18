@@ -115,13 +115,20 @@ class Memory:
         A memory update can be divided into these steps:
         1) Read interface vector (the tensors are passed by DNC).
         2) Update current usage using free_gate.
-        3) Find allocation weighting by using the usage vector.
+        3) Find allocation weighting by using the usage vector
+            and the content-based weightings for the write heads.
         4) Calculate write_weights by finding a write content weighting first,
             by using content-based addressing function C for the weight_keys.
             Next, we use write_gate, allocation_gate, allocation weightings,
             and write content weightings to find write_weights.
         5) Update memory by using erase_vectors and write_vectors.
-        6) Update link matrix TODO
+        6) Update link matrix. See `update_linkage()` for more details.
+        7) Calculate content-based read addresses,
+            and then update read weights, which depends on content-addressing
+            as well as link matrix (forward/backward linkage read weights).
+            We interpolate between these three modes to get the final read weights.
+        8) Update the state of the DNC (note that `self` still has `t-1` state).
+        9) Return the words read from memory by the read heads.
         """
 
         # Calculate the next usage
@@ -145,7 +152,7 @@ class Memory:
         # Calculate the content-based read addresses (note updated memory)
         read_content_weights = self.content_based_address(memory_data_t,
             interface["read_keys"], interface["read_strengths"])
-        # Find the next read weights using 
+        # Find the next read weights using linkage matrix
         read_weights_t = self.update_read_weights(link_t,
             interface["read_modes"], read_content_weights)
 
@@ -320,6 +327,7 @@ class Memory:
         the link matrix such as (1 - w_i - w_j) * L
         satisfies L[i,j] = (1 - w[i] - w[j]) @ L_prev[i,j].
         We can arrive to the same conclusion using the same logic for w[i] * p[j].
+        (I'm explaining this because it slightly confused me when I first saw it).
         """
         w_i = write_weights.unsqueeze(dim=-1)
         w_j = write_weights.unsqueeze(dim=-2)

@@ -1,10 +1,14 @@
 
-# Just a simple configs file with all the hyper parameters you need to set
+# Just a simple configs file with all the hyperparameters you need to set
+
+# Note: 0 sets the seed to torch's initial seed
+RANDOM_SEED = 10
+
+# Training-specific hyperparameters
 BATCH_SIZE = 8
 EPSILON = 1e-6
 LEARNING_RATE = 1e-4
 MOMENTUM = 0.9
-RANDOM_SEED = 10  # > 0
 NUM_EXAMPLES = 20000
 CHECKPOINT = NUM_EXAMPLES // 200
 

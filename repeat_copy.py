@@ -33,7 +33,7 @@ class RepeatCopy:
 
 	def generate(self, num_examples):
 		"""
-		Generate `num_examples` examples.
+		Generate `num_examples` examples using `example()`.
 		"""
 		for _ in range(num_examples):
 			yield self.example()
@@ -42,7 +42,7 @@ class RepeatCopy:
 	def example(self):
 		"""
 		Fetches/creates the next repeat-copy example.
-		Also returns the lengths of the bits in each batch element.
+		Also Updates the lengths of the bits in each batch element.
 		"""
 
 		# Index for the start marker
@@ -87,7 +87,13 @@ class RepeatCopy:
 
 	def loss(self, pred_outputs, true_outputs):
 		"""
-		TODO
+		This function calculates a more refined loss (or distance if you like)
+		between the true outputs and the predicted outputs.
+
+		Here, we use a simple Euclidean distance for each time step indpendently,
+		and then sum up the distances for all the relevant time steps.
+		The output we get while receiving the input is irrelevant, so there is
+		no loss in predicting it wrong (i.e. there isn't a true output).
 		"""
 		bits_lengths = self.bits_lengths
 
@@ -105,7 +111,11 @@ class RepeatCopy:
 
 	def report(self, data, pred_outputs):
 		"""
-		TODO
+		Prints a simple report given the `data` produced by the last call of
+		`example()` and the predicted output of the DNC.
+		Shows a random input/output example from the batch.
+		We show the output rounded to the nearest integer as well.
+		Finally, we calculate the number of mispredicted bits (after rounding).
 		"""
 		inputs, true_outputs = data
 		bits_lengths = self.bits_lengths
