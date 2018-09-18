@@ -1,5 +1,5 @@
 # DNC in PyTorch
-This is a reimplementation of the Differential Neural Computer (DNC) in PyTorch.
+This is a reimplementation of the [Differentiable Neural Computer (DNC)](https://deepmind.com/blog/differentiable-neural-computers/) in PyTorch.
 This implementation uses some functions from the latest version of PyTorch (0.4),
 so make sure you update your PyTorch before running this code.
 
