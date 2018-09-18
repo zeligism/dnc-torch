@@ -28,7 +28,8 @@ class RepeatCopy:
 		self.input_size = num_bits + 2 + max_repeats
 		self.output_size = num_bits + 1
 
-		self.bits_lengths = None
+		# This variable should hold the inputs' lengths from the last example
+		self.inputs_lengths = None
 
 
 	def generate(self, num_examples):
@@ -81,7 +82,7 @@ class RepeatCopy:
 			outputs[target_start:target_end, i, 1:] = bits.repeat(repeats[i], 1)
 			outputs[target_end, i, 0] = 1
 
-		self.bits_lengths = bits_lengths
+		self.inputs_lengths = bits_lengths + 2
 
 		return inputs, outputs
 
@@ -95,11 +96,11 @@ class RepeatCopy:
 		The output we get while receiving the input is irrelevant, so there is
 		no loss in predicting it wrong (i.e. there isn't a true output).
 		"""
-		bits_lengths = self.bits_lengths
+		inputs_lengths = self.inputs_lengths
 
 		# Clean predictions made during input
 		for i in range(BATCH_SIZE):
-			pred_outputs[:bits_lengths[i]+2, i, :] = 0
+			pred_outputs[:inputs_lengths[i], i, :] = 0
 
 		# Calculate the accumulated MSE Loss for all time steps
 		loss = 0
@@ -118,7 +119,7 @@ class RepeatCopy:
 		Finally, we calculate the number of mispredicted bits (after rounding).
 		"""
 		inputs, true_outputs = data
-		bits_lengths = self.bits_lengths
+		inputs_lengths = self.inputs_lengths
 
 		# Pick a random batch number
 		i = torch.IntTensor(1).random_(1, BATCH_SIZE).item()
@@ -126,21 +127,21 @@ class RepeatCopy:
 		# Show the true outputs and the (rounded) predictions
 		print()
 		print("-----------------------------------")
-		print(inputs[:bits_lengths[i]+2, i, :])
+		print(inputs[:inputs_lengths[i], i, :])
 		print()
 		print("Expected:")
-		print(true_outputs[bits_lengths[i]+2:, i, :])
+		print(true_outputs[inputs_lengths[i]:, i, :])
 		print()
 		print("Got:")
-		print(pred_outputs[bits_lengths[i]+2:, i, :].round().abs())
+		print(pred_outputs[inputs_lengths[i]:, i, :].round().abs())
 		print()
 		print("Got (without rounding):")
-		print(pred_outputs[bits_lengths[i]+2:, i, :])
+		print(pred_outputs[inputs_lengths[i]:, i, :])
 		print()
 
 		# Print the number of mispredicted bits
 		bits_miss = (pred_outputs.round() - true_outputs).abs().sum().item()
-		bits_total = self.output_size * (bits_lengths + 2).sum().item()
+		bits_total = self.output_size * inputs_lengths.sum().item()
 		print("Bits mispredicted =", int(bits_miss),
 			"out of", int(bits_total))
 
