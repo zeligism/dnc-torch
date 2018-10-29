@@ -47,9 +47,10 @@ class DNC(nn.Module):
         """
         Detach the state of the DNC from the graph.
         """
-        self.controller_state = (Variable(self.controller_state[0].data),
-            Variable(self.controller_state[1].data))
-        self.read_words = Variable(self.read_words.data)
+        self.controller_state = (
+            self.controller_state[0].detach(),
+            self.controller_state[1].detach())
+        self.read_words.detach_()
         self.memory.detach_state()
 
 

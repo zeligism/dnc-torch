@@ -30,12 +30,12 @@ class Memory:
 
 
     def detach_state(self):
-        self.memory_data = Variable(self.memory_data.data)
-        self.read_weights = Variable(self.read_weights.data)
-        self.write_weights = Variable(self.write_weights.data)
-        self.precedence_weights = Variable(self.precedence_weights.data)
-        self.link = Variable(self.link.data)
-        self.usage = Variable(self.usage.data)
+        self.memory_data.detach_()
+        self.read_weights.detach_()
+        self.write_weights.detach_()
+        self.precedence_weights.detach_()
+        self.link.detach_()
+        self.usage.detach_()
 
 
     def debug(self):
