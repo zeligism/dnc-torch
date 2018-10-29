@@ -25,7 +25,7 @@ class RepeatCopy:
 		self.max_repeats = max_repeats
 		
 		# Input and output sizes are fixed for the given parameters
-		self.input_size = num_bits + 2 + max_repeats
+		self.input_size = num_bits + 2 + max_repeats - min_repeats
 		self.output_size = num_bits + 1
 
 		# This variable should hold the inputs' lengths from the last example
@@ -55,7 +55,7 @@ class RepeatCopy:
 		repeats = torch.IntTensor(BATCH_SIZE).random_(
 			self.min_repeats, self.max_repeats + 1)
 
-		# Total sequence length is input bits + repeats + channels
+		# Total sequence length is input bits + repeats * bits + channels
 		seq_length = torch.max(bits_lengths + repeats * bits_lengths + 3)
 		# Fill inputs and outputs with zeros
 		inputs = torch.zeros(seq_length, BATCH_SIZE, self.input_size)
@@ -75,13 +75,16 @@ class RepeatCopy:
 			# Then the observation bits follow (from idx 0 up to start channel)
 			inputs[1:obs_end, i, :start_channel] = bits
 			# Finally, we activate the appropriate repeat channel
-			repeats_active_channel = start_channel + 1 + repeats[i]
+			# (Note that smallest index in repeat channel, which is start_channel + 1,
+			# is for min_repeats, not 0 repeats.)
+			repeats_active_channel = start_channel + 1 + repeats[i] - self.min_repeats
 			inputs[obs_end, i, repeats_active_channel] = 1
 
 			# Fill output up to repeats of bits
 			outputs[target_start:target_end, i, 1:] = bits.repeat(repeats[i], 1)
 			outputs[target_end, i, 0] = 1
 
+		# Record inputs' lengths of this example
 		self.inputs_lengths = bits_lengths + 2
 
 		return inputs, outputs
