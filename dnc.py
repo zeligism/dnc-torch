@@ -35,11 +35,15 @@ class DNC(nn.Module):
         """
         Initialize the state of the DNC.
         """
-        zero_hidden = lambda: torch.zeros(self.controller.num_layers,
-            BATCH_SIZE, self.controller.hidden_size, requires_grad=True)
-        self.controller_state = (zero_hidden(), zero_hidden())
+        # Initialize controller's state
+        num_layers = self.controller.num_layers
+        hidden_size = self.controller.hidden_size
+        self.controller_state = (
+            torch.zeros(num_layers, BATCH_SIZE, hidden_size),
+            torch.zeros(num_layers, BATCH_SIZE, hidden_size))
+        # Initialize read_words state
         self.read_words = torch.zeros(BATCH_SIZE,
-            self.memory.num_reads, self.memory.word_size, requires_grad=True)
+            self.memory.num_reads, self.memory.word_size)
 
 
     def detach_state(self):
@@ -169,6 +173,7 @@ class DNC(nn.Module):
             outputs.append(output)
 
         return torch.stack(outputs, dim=0)
+
 
 
 

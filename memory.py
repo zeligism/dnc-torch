@@ -10,6 +10,8 @@ Memory.
 class Memory:
     def __init__(self, memory_size=128,
         word_size=20, num_writes=1, num_reads=1):
+        #super(Memory, self).__init__()
+        # Initialize memory parameters sizes
         self.memory_size = memory_size
         self.word_size = word_size
         self.num_writes = num_writes
@@ -19,13 +21,12 @@ class Memory:
 
 
     def init_state(self):
-        zero_variable = lambda *size: torch.zeros(*size, requires_grad=True)
-        self.memory_data = zero_variable(BATCH_SIZE, self.memory_size, self.word_size)
-        self.read_weights = zero_variable(BATCH_SIZE, self.num_reads, self.memory_size)
-        self.write_weights = zero_variable(BATCH_SIZE, self.num_writes, self.memory_size)
-        self.precedence_weights = zero_variable(BATCH_SIZE, self.num_writes, self.memory_size)
-        self.link = zero_variable(BATCH_SIZE, self.num_writes, self.memory_size, self.memory_size)
-        self.usage = zero_variable(BATCH_SIZE, self.memory_size)
+        self.memory_data = torch.zeros(BATCH_SIZE, self.memory_size, self.word_size)
+        self.read_weights = torch.zeros(BATCH_SIZE, self.num_reads, self.memory_size)
+        self.write_weights = torch.zeros(BATCH_SIZE, self.num_writes, self.memory_size)
+        self.precedence_weights = torch.zeros(BATCH_SIZE, self.num_writes, self.memory_size)
+        self.link = torch.zeros(BATCH_SIZE, self.num_writes, self.memory_size, self.memory_size)
+        self.usage = torch.zeros(BATCH_SIZE, self.memory_size)
 
 
     def detach_state(self):
