@@ -10,7 +10,7 @@ class DNC(nn.Module):
 
     def __init__(self, input_size, output_size,
         controller_config, memory_config, Controller=nn.LSTM):
-        super(DNC, self).__init__()
+        super().__init__()
 
         # Initialize memory
         self.memory = Memory(**memory_config)
@@ -25,10 +25,18 @@ class DNC(nn.Module):
         self.init_state()
 
         # Define interface layers
-        self.interface_layers = self.init_interface_layers()
+        self.interface_layer = DNC_InterfaceLayer(
+            self.controller.hidden_size,
+            self.memory.num_writes,
+            self.memory.num_reads,
+            self.memory.word_size,
+            )
+
         # Define output layer
         self.output_size = output_size
-        self.output_layer = self.init_output_layer()
+        pre_output_size = self.controller.hidden_size + \
+            self.memory.num_reads * self.memory.word_size
+        self.output_layer = nn.Linear(pre_output_size, self.output_size)
 
 
     def init_state(self):
@@ -64,74 +72,6 @@ class DNC(nn.Module):
         self.memory.debug()
 
 
-    def init_interface_layers(self):
-        """
-        Initialize all layers connected to the interface
-        vector (the controller's output).
-        """
-
-        # The following functions help decorate an affine operation,
-        # i.e. a linear layer, with a reshape and an activation.
-
-        # `reshape_output` changes `f` to reshape its output to `dim`.
-        reshape_output = lambda f, *dim: ( lambda x: f(x).view(-1, *dim) )
-        # `add_activation` changes `f` by activating its output with `sigma`.
-        add_activation = lambda f, sigma: ( lambda x: sigma(f(x)) )
-        # Returns a modified linear layer transformation
-        def linear(activation, *dim):
-            dim_prod = dim[0] if len(dim) == 1 else dim[0] * dim[1]
-            # Input size to all layers is interface (hidden) size
-            layer = nn.Linear(self.controller.hidden_size, dim_prod)
-            layer = reshape_output(layer, *dim)
-            if activation is not None:
-                layer = add_activation(layer, activation)
-            return layer
-        
-        # This structure will hold all layers from the interface vector.
-        layers = {}
-
-        # Dimensions used
-        num_writes = self.memory.num_writes
-        num_reads = self.memory.num_reads
-        word_size = self.memory.word_size
-        num_read_modes = 1 + 2 * num_writes
-
-        # Activations used
-        sigmoid = nn.Sigmoid()
-        softmax_mode = nn.Softmax(dim=2)
-
-        # Read and write keys and their strengths.
-        layers["read_keys"]       = linear(None, num_reads, word_size)
-        layers["read_strengths"]  = linear(None, num_reads)
-        layers["write_keys"]      = linear(None, num_writes, word_size)
-        layers["write_strengths"] = linear(None, num_writes)
-        # Erase and write (i.e. overwrite) vectors.
-        layers["erase_vectors"] = linear(sigmoid, num_writes, word_size)
-        layers["write_vectors"] = linear(sigmoid, num_writes, word_size)
-        # Free, allocation, and write gates.
-        layers["free_gate"]       = linear(sigmoid, num_reads)
-        layers["allocation_gate"] = linear(sigmoid, num_writes)
-        layers["write_gate"]      = linear(sigmoid, num_writes)
-        # Read modes (forward + backward for each write head,
-        # and one for content-based addressing).
-        layers["read_modes"] = linear(softmax_mode, num_reads, num_read_modes)
-
-        return layers
-
-
-    def init_output_layer(self):
-        """
-        Initialize output layer that links the interface's outputs
-        to the actual output of the DNC.
-        """
-        pre_output_size = self.controller.hidden_size + \
-            self.memory.num_reads * self.memory.word_size
-
-        output_linear = nn.Linear(pre_output_size, self.output_size)
-
-        return output_linear
-
-
     def forward(self, inputs):
         """
         Makes one forward pass one the inputs.
@@ -162,8 +102,7 @@ class DNC(nn.Module):
             """ Compute all the interface tensors by passing
             the controller's output to all the layers, and
             then passing the result as an input to memory. """
-            interface = {name: layer(controller_output)
-                for name, layer in self.interface_layers.items()}
+            interface = self.interface_layer(controller_output)
             self.read_words = self.memory.update(interface)
 
             pre_output = torch.cat([controller_output,
@@ -174,6 +113,69 @@ class DNC(nn.Module):
 
         return torch.stack(outputs, dim=0)
 
+
+class DNC_InterfaceLayer(nn.Module):
+    """
+    The interface layer of the DNC.
+    Simply applies linear layers to the hidden state of the controller.
+    Each linear layer is associated with an interface vector,
+    as described in the paper. The output is reshaped accordingly in LinearView,
+    and activations are applied depending on the type of interface vector.
+    """
+    def __init__(self, input_size, num_writes, num_reads, word_size):
+        super().__init__()
+
+        # Read and write keys and their strengths.
+        self.read_keys       = LinearView(input_size, [num_reads, word_size])
+        self.read_strengths  = LinearView(input_size, [num_reads])
+        self.write_keys      = LinearView(input_size, [num_writes, word_size])
+        self.write_strengths = LinearView(input_size, [num_writes])
+        # Erase and write (i.e. overwrite) vectors.
+        self.erase_vectors   = LinearView(input_size, [num_writes, word_size])
+        self.write_vectors   = LinearView(input_size, [num_writes, word_size])
+        # Free, allocation, and write gates.
+        self.free_gate       = LinearView(input_size, [num_reads])
+        self.allocation_gate = LinearView(input_size, [num_writes])
+        self.write_gate      = LinearView(input_size, [num_writes])
+        # Read modes (forward + backward for each write head,
+        # and one for content-based addressing).
+        num_read_modes = 1 + 2 * num_writes
+        self.read_modes = LinearView(input_size, [num_reads, num_read_modes])
+
+
+    def forward(self, x):
+        return {
+            "read_keys":       self.read_keys(x),
+            "read_strengths":  self.read_strengths(x),
+            "write_keys":      self.write_keys(x),
+            "write_strengths": self.write_strengths(x),
+            "erase_vectors":   torch.sigmoid(self.erase_vectors(x)),
+            "write_vectors":   torch.sigmoid(self.write_vectors(x)),
+            "free_gate":       torch.sigmoid(self.free_gate(x)),
+            "allocation_gate": torch.sigmoid(self.allocation_gate(x)),
+            "write_gate":      torch.sigmoid(self.write_gate(x)),
+            "read_modes":      F.softmax(self.read_modes(x), dim=2),
+        }
+
+
+class LinearView(nn.Module):
+    """
+    Similar to linear, except that it outputs a tensor with size `dim`.
+    It is assumed that the first dimension is the batch dimension.
+    """
+    def __init__(self, input_size, output_view):
+        super().__init__()
+        # Calculate output size (just the product of dims in output_view)
+        output_size = 1
+        for dim in output_view: output_size *= dim
+        # Define the layer and the desired view of the output
+        self.layer = nn.Linear(input_size, output_size)
+        self.output_view = output_view
+
+
+    def forward(self, x):
+        # -1 because we assume batch dimension exists
+        return self.layer(x).view(-1, *self.output_view)
 
 
 
