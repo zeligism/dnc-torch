@@ -33,7 +33,6 @@ meaning that if the maximum number of allowed repeat is 4, then there would be 5
 each signifying a number between 0 and 4, inclusive. Yes, I included 0 repeats as well.
 I think it's difficult for a neural network to tell the difference between a 3 and a 4 in a counting sense,
 which is why I used one hot encoding for representing the number of repeats.
-(**Note to self**: you forgot to remove redundant channels when `min_repeats` is bigger than 0.)
 
 In addition to that, I calculated the loss differently. I really didn't understand how DeepMind calculated their cross entropy loss.
 I only implemented a loss that made sense to me, which is simply the sum of distances between prediction and target at each time step.
