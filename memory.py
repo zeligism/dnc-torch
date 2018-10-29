@@ -10,7 +10,7 @@ Memory.
 class Memory:
     def __init__(self, memory_size=128,
         word_size=20, num_writes=1, num_reads=1):
-        #super(Memory, self).__init__()
+
         # Initialize memory parameters sizes
         self.memory_size = memory_size
         self.word_size = word_size
