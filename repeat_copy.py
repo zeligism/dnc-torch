@@ -145,8 +145,10 @@ class RepeatCopy:
 		# Print the number of mispredicted bits
 		bits_miss = (pred_outputs.round() - true_outputs).abs().sum().item()
 		bits_total = self.output_size * inputs_lengths.sum().item()
-		print("Bits mispredicted =", int(bits_miss),
-			"out of", int(bits_total))
+		bits_hits = bits_total - bits_miss
+		print("hits =", int(bits_hits), "out of", int(bits_total))
+		print("Accuracy = %.2f%%" % (100 * bits_hits / bits_total))
+		print()
 
 
 
