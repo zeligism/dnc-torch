@@ -3,7 +3,6 @@ import time
 
 import torch
 import torch.nn.functional as F
-from torch.autograd import Variable
 
 from training_configs import *
 from dnc import DNC
@@ -36,7 +35,6 @@ def train(dnc, dataset):
 
 		# Unpack input/output and turn them into variables
 		inputs, true_outputs = data
-		inputs, true_outputs = Variable(inputs), Variable(true_outputs)
 
 		# Do a forward pass, compute loss, then do a backward pass
 		pred_outputs = dnc(inputs)

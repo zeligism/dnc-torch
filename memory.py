@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.autograd import Variable
 
 from training_configs import *
 
@@ -20,7 +19,7 @@ class Memory:
 
 
     def init_state(self):
-        zero_variable = lambda *size: Variable(torch.zeros(*size))
+        zero_variable = lambda *size: torch.zeros(*size, requires_grad=True)
         self.memory_data = zero_variable(BATCH_SIZE, self.memory_size, self.word_size)
         self.read_weights = zero_variable(BATCH_SIZE, self.num_reads, self.memory_size)
         self.write_weights = zero_variable(BATCH_SIZE, self.num_writes, self.memory_size)
@@ -270,7 +269,7 @@ class Memory:
         sorted_usage, phi = self.usage.sort()
 
         # We will add this `one` before the `sorted_usage`.
-        one = Variable(torch.ones(BATCH_SIZE, 1))
+        one = torch.ones(BATCH_SIZE, 1)
         padded_sorted_usage = torch.cat([one, sorted_usage], dim=1)
         # Now we can take the "exclusive" cumprod of the `sorted_usage` by taking
         # the cumprod of `padded_sorted_usage` and dropping the last column.
@@ -333,7 +332,7 @@ class Memory:
         w_j = write_weights.unsqueeze(dim=-2)
         p_j = self.precedence_weights.unsqueeze(dim=-2)  # p{t-1}_j to be pedantic
         link = (1 - w_i - w_j) * self.link + w_i * p_j
-        inverted_eye = Variable(1 - torch.eye(self.memory_size).expand_as(link))
+        inverted_eye = 1 - torch.eye(self.memory_size).expand_as(link)
         link = link * inverted_eye  # Set diagonal to 0s
 
         # Calculate precedence weightings

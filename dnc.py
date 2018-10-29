@@ -2,7 +2,6 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.autograd import Variable
 
 from training_configs import *
 from memory import Memory
@@ -36,11 +35,11 @@ class DNC(nn.Module):
         """
         Initialize the state of the DNC.
         """
-        zero_hidden = lambda: Variable(torch.zeros(
-            self.controller.num_layers, BATCH_SIZE, self.controller.hidden_size))
+        zero_hidden = lambda: torch.zeros(self.controller.num_layers,
+            BATCH_SIZE, self.controller.hidden_size, requires_grad=True)
         self.controller_state = (zero_hidden(), zero_hidden())
-        self.read_words = Variable(torch.zeros(BATCH_SIZE,
-            self.memory.num_reads, self.memory.word_size))
+        self.read_words = torch.zeros(BATCH_SIZE,
+            self.memory.num_reads, self.memory.word_size, requires_grad=True)
 
 
     def detach_state(self):
